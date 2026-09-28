@@ -4,6 +4,7 @@ import logging
 import random
 from src.config import client
 from src.token_check import count_tokens, compress_history
+from src.tool_registry import tool, get_tools_schema, execute_tool
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
@@ -22,6 +23,7 @@ class ToolPermanentError(Exception):
 
 
 # ---------- 1. 定义工具（普通 Python 函数） ----------
+@tool("查询某个城市实时天气")
 def get_weather(city: str) -> str:
     # 模拟随机失败
     if random.random() < 0.3:
@@ -29,11 +31,13 @@ def get_weather(city: str) -> str:
     # 模拟无法查询
     if city not in ["北京", "上海", "东京"]:
         raise ToolPermanentError(f"无法查询 {city} 的天气")
+    # 模拟查天气
+    temp = random.randint(15, 30)
+    weather = random.choice(["晴", "阴", "雨", "多云"])
+    return f"{city}今天{weather}，{temp}度"
 
-    """模拟查天气"""
-    return f"{city}今天晴，22度"
 
-
+@tool("计算数学表达式")
 def calculate(expression: str) -> str:
     """计算数学表达式"""
     return str(eval(expression))
@@ -69,8 +73,6 @@ tools = [
     },
 ]
 
-tool_map = {"get_weather": get_weather, "calculate": calculate}
-
 
 # ---------- 3. Agent 主循环 ----------
 def run_agent(user_input: str, history: list = None, max_steps: int = 10):
@@ -97,8 +99,7 @@ def run_agent(user_input: str, history: list = None, max_steps: int = 10):
         response = client.chat.completions.create(
             model="deepseek-v4-pro",
             messages=messages,
-            tools=tools,
-            tool_choice="auto",
+            tools=get_tools_schema(),  # 从注册表取tool
         )
         msg = response.choices[0].message
 
@@ -135,7 +136,7 @@ def run_agent(user_input: str, history: list = None, max_steps: int = 10):
             args = json.loads(tc.function.arguments)
             logger.info(f"调用工具: {tc.function.name}({args})")
             try:
-                result = tool_map[tc.function.name](**args)
+                result = execute_tool(tc.function.name, args)  # ← 从注册表执行
             except ToolTransientError as e:
                 result = f"工具暂不可用（请重试）: {e}"
                 logger.warning(f"工具 {tc.function.name} 暂不可用: {e}")
