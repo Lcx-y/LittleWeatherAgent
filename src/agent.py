@@ -5,6 +5,7 @@ import random
 from src.config import client
 from src.token_check import count_tokens, compress_history
 from src.tool_registry import tool, get_tools_schema, execute_tool
+from src.mcp_bridge import get_mcp_tools_schema, call_mcp_tool
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
@@ -96,10 +97,13 @@ def run_agent(user_input: str, history: list = None, max_steps: int = 10):
             messages = compress_history(messages)
         logger.info(f"第 {step + 1} 步，发送 {len(messages)} 条消息给模型")
 
+        # 合并 schema
+        all_tools = get_tools_schema() + get_mcp_tools_schema()
+
         response = client.chat.completions.create(
             model="deepseek-v4-pro",
             messages=messages,
-            tools=get_tools_schema(),  # 从注册表取tool
+            tools=all_tools,
         )
         msg = response.choices[0].message
 
@@ -137,6 +141,10 @@ def run_agent(user_input: str, history: list = None, max_steps: int = 10):
             logger.info(f"调用工具: {tc.function.name}({args})")
             try:
                 result = execute_tool(tc.function.name, args)  # ← 从注册表执行
+            except ValueError:
+                # 本地注册表没有，调用mcp
+                result = call_mcp_tool(tc.function.name, args)
+
             except ToolTransientError as e:
                 result = f"工具暂不可用（请重试）: {e}"
                 logger.warning(f"工具 {tc.function.name} 暂不可用: {e}")

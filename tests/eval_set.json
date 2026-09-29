@@ -1,0 +1,57 @@
+[
+    {
+        "id": "weather_beijing",
+        "input": "北京天气怎么样",
+        "expected_tool": [
+            "get_weather",
+            "mcp_get_weather"
+        ],
+        "expected_city": "北京",
+        "must_contain": [
+            "北京",
+            "度"
+        ]
+    },
+    {
+        "id": "weather_unsupported",
+        "input": "火星天气怎么样",
+        "expected_tool": [
+            "get_weather",
+            "mcp_get_weather"
+        ],
+        "expected_city": "火星",
+        "must_contain": [
+            "不支持",
+            "无法"
+        ]
+    },
+    {
+        "id": "calculate_simple",
+        "input": "1+2*3等于多少",
+        "expected_tool": [
+            "calculate",
+            "mcp_calculate"
+        ],
+        "must_contain": [
+            "7"
+        ]
+    },
+    {
+        "id": "multi_step",
+        "input": "北京和东京的平均温度是多少",
+        "expected_tools": [
+            [
+                "get_weather",
+                "mcp_get_weather"
+            ],
+            [
+                "calculate",
+                "mcp_calculate"
+            ]
+        ],
+        "must_contain": [
+            "平均",
+            "度"
+        ]
+    }
+]
