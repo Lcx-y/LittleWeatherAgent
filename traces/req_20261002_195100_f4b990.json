@@ -1,0 +1,39 @@
+{
+  "request_id": "req_20261002_195100_f4b990",
+  "session_id": "test_1790941851",
+  "user_input": "北京天气如何",
+  "start_time": "2026-10-02T19:51:00.852168",
+  "end_time": "2026-10-02T19:51:08.745841",
+  "total_duration_ms": 7893,
+  "total_tokens": 1287,
+  "steps": [
+    {
+      "step": 1,
+      "duration_ms": 1587,
+      "tokens": 622,
+      "request_messages_count": 3,
+      "response_type": "tool_call",
+      "tool_calls": [
+        {
+          "name": "get_weather",
+          "args": {
+            "city": "北京"
+          }
+        }
+      ],
+      "reasoning": "The user asks about Beijing weather. I must call get_weather to get real-time data.",
+      "final_answer": null
+    },
+    {
+      "step": 2,
+      "duration_ms": 1221,
+      "tokens": 665,
+      "request_messages_count": 4,
+      "response_type": "final_answer",
+      "tool_calls": null,
+      "reasoning": "Got weather for Beijing: clear, 16 degrees. Report.",
+      "final_answer": "北京今天晴，气温 16 度。"
+    }
+  ],
+  "final_reply": "北京今天晴，气温 16 度。"
+}

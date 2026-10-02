@@ -88,7 +88,9 @@ def chat(req: ChatRequest):
 
     # 避免错误中断后，脏历史传入数据库
     try:
-        reply, reasoning, new_messages = run_agent(req.message, history=history)
+        reply, reasoning, new_messages = run_agent(
+            req.message, history=history, session_id=req.session_id
+        )
     except Exception as e:
         logger.error("Agent执行失败:{}".format(e), exc_info=True)
         return ChatResponse(reply="Agent执行失败:{}".format(e))

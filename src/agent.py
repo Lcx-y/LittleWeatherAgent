@@ -5,7 +5,9 @@ import random
 from src.config import client
 from src.token_check import count_tokens, compress_history
 from src.tool_registry import tool, get_tools_schema, execute_tool
+from src.tracer import Tracer
 from src.mcp_bridge import get_mcp_tools_schema, call_mcp_tool
+import time
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
@@ -35,7 +37,7 @@ def get_weather(city: str) -> str:
     # 模拟查天气
     temp = random.randint(15, 30)
     weather = random.choice(["晴", "阴", "雨", "多云"])
-    return f"{city}今天{weather}，{temp}度"
+    return f"{city}今天{weather}, {temp}度"
 
 
 @tool("计算数学表达式")
@@ -76,7 +78,13 @@ tools = [
 
 
 # ---------- 3. Agent 主循环 ----------
-def run_agent(user_input: str, history: list = None, max_steps: int = 10):
+def run_agent(
+    user_input: str,
+    history: list = None,
+    session_id: str = "default",
+    max_steps: int = 10,
+):
+    tracer = Tracer(session_id, user_input)
     messages = []
     # 避免模型“懒惰”，必须调用工具而不是根据历史记录推断
     system_msg = {
@@ -100,11 +108,16 @@ def run_agent(user_input: str, history: list = None, max_steps: int = 10):
         # 合并 schema
         all_tools = get_tools_schema() + get_mcp_tools_schema()
 
+        step_start = time.time()
+
         response = client.chat.completions.create(
             model="deepseek-v4-pro",
             messages=messages,
             tools=all_tools,
         )
+        step_duration = int((time.time() - step_start) * 1000)
+        step_tokens = response.usage.total_tokens if response.usage else 0
+
         msg = response.choices[0].message
 
         # 提取当前轮的 reasoning
@@ -116,6 +129,17 @@ def run_agent(user_input: str, history: list = None, max_steps: int = 10):
         # 情况 A：模型没调工具，直接给答案 → 结束
         if not msg.tool_calls:
             logger.info(f"模型给出最终答案，共 {step + 1} 步")
+
+            tracer.record_step(  # ← 新增
+                step=step + 1,
+                duration_ms=step_duration,
+                tokens=step_tokens,
+                response_type="final_answer",
+                reasoning=current_reasoning,
+                final_answer=msg.content,
+                messages_count=len(messages),
+            )
+            tracer.save(msg.content)
 
             assistant_msg = {
                 "role": "assistant",
@@ -135,6 +159,20 @@ def run_agent(user_input: str, history: list = None, max_steps: int = 10):
 
         messages.append(assistant_msg)
         new_messages.append(assistant_msg)
+
+        tool_calls_info = [  # ← 新增
+            {"name": tc.function.name, "args": json.loads(tc.function.arguments)}
+            for tc in msg.tool_calls
+        ]
+        tracer.record_step(  # ← 新增
+            step=step + 1,
+            duration_ms=step_duration,
+            tokens=step_tokens,
+            response_type="tool_call",
+            tool_calls=tool_calls_info,
+            reasoning=current_reasoning,
+            messages_count=len(messages),
+        )
 
         for tc in msg.tool_calls:
             args = json.loads(tc.function.arguments)
@@ -163,6 +201,7 @@ def run_agent(user_input: str, history: list = None, max_steps: int = 10):
             messages.append(tool_msg)
             new_messages.append(tool_msg)
 
+    tracer.save("达到最大步数")
     return "达到最大步数", "未完成", new_messages
 
 
