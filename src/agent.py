@@ -8,6 +8,7 @@ from src.tool_registry import tool, get_tools_schema, execute_tool
 from src.tracer import Tracer
 from src.mcp_bridge import get_mcp_tools_schema, call_mcp_tool
 import time
+import asyncio
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
@@ -23,6 +24,44 @@ class ToolTransientError(Exception):
 class ToolPermanentError(Exception):
     # 永久错误，重试不会成功
     pass
+
+
+async def _run_one_tool(tc):
+    """执行单个工具调用，返回 (tc, result)"""
+    args = json.loads(tc.function.arguments)
+    logger.info(f"调用工具: {tc.function.name}({args})")
+    try:
+        # 同步函数丢进线程池，避免阻塞事件循环
+        result = await asyncio.to_thread(execute_tool, tc.function.name, args)
+    except ValueError:
+        # 本地注册表没有，调用 MCP
+        try:
+            result = await asyncio.to_thread(call_mcp_tool, tc.function.name, args)
+        except ToolTransientError as e:
+            result = f"工具暂不可用（请重试）: {e}"
+            logger.warning(f"工具 {tc.function.name} 暂不可用: {e}")
+        except ToolPermanentError as e:
+            result = f"工具无法执行（请更换方式）: {e}"
+            logger.error(f"工具 {tc.function.name} 无法执行: {e}")
+        except Exception as e:
+            result = f"工具执行失败: {e}"
+            logger.error(f"未知 {tc.function.name} 失败: {e}")
+    except ToolTransientError as e:
+        result = f"工具暂不可用（请重试）: {e}"
+        logger.warning(f"工具 {tc.function.name} 暂不可用: {e}")
+    except ToolPermanentError as e:
+        result = f"工具无法执行（请更换方式）: {e}"
+        logger.error(f"工具 {tc.function.name} 无法执行: {e}")
+    except Exception as e:
+        result = f"工具执行失败: {e}"
+        logger.error(f"未知 {tc.function.name} 失败: {e}")
+    return tc, result
+
+
+async def _run_tools_concurrently(tool_calls):
+    """并发执行所有工具调用，返回结果列表"""
+    tasks = [_run_one_tool(tc) for tc in tool_calls]
+    return await asyncio.gather(*tasks)
 
 
 # ---------- 1. 定义工具（普通 Python 函数） ----------
@@ -174,7 +213,9 @@ def run_agent(
             messages_count=len(messages),
         )
 
-        for tc in msg.tool_calls:
+        results = asyncio.run(_run_tools_concurrently(msg.tool_calls))
+
+        for tc, result in results:
             args = json.loads(tc.function.arguments)
             logger.info(f"调用工具: {tc.function.name}({args})")
             try:
